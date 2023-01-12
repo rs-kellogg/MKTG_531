@@ -1,0 +1,127 @@
+---
+title: "Exploring Qualtrics Surveys with R"
+author: "Ambreen Chaudhri"
+date: "1/13/2023"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, out.extra="")
+```
+
+## R Markdown Installation
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+To install R Markdown, you will need to run the following install packages lines and load library lines:
+
+```{r packages, message=FALSE, warning=FALSE, results='asis'}
+# install packages
+#install.packages('rmarkdown')
+
+# load packages
+library(rmarkdown)
+
+# load additional packages
+library(qualtRics)
+library(dplyr)
+library(stringr)
+library(vtable)
+#library(stargazer)
+```
+
+## Including Code Chunks and Results
+
+You can embed an R code chunk in the space below.  Note that this line will show you both the R command you used and the results.  
+
+```{r qualtrics}
+# Clear Workspace
+rm(list=ls()) 
+
+# set working directory
+setwd("~/MKTG_531")
+
+# RUN THIS STEP FIRST TIME ONLY, TO GENERATE ".Renviron" FILE
+#qualtrics_api_credentials(api_key = "INSERT YOUR API KEY HERE",
+#                          base_url = "ca1.qualtrics.com",
+#                          install = TRUE,
+#                          overwrite = TRUE)
+
+readRenviron("~/.Renviron")
+outpath = "~/MKTG_531"
+
+# Show all surveys and select one project by name
+surveys   <- all_surveys()
+surveys
+myproject <- filter(surveys, name=="Demographics Survey - eLab - 2022 pool refresh")
+myproject
+myproject$id[1]
+
+#Fetch the survey for that project as .RDS file
+mysurvey <- fetch_survey(surveyID = myproject$id[1],
+                         save_dir = outpath,
+                         force_request = TRUE,
+                         verbose = TRUE)
+nrow(mysurvey)
+
+
+# save the approximate day/time of when you downloaded the survey
+Sys.time()
+download_time <- format(Sys.time(), "%a %b %d %X %Y")
+download_message <- paste("I downloaded the", myproject$name, "survey data on:", download_time, sep=" ")
+download_message
+
+# save download time to log file
+logfile_path <- paste(outpath, "/logfile.text", sep="")
+writeLines(download_message, logfile_path)
+
+
+# Read RDS file into dataframe "mysurvey", and save copy as CSV
+rdspath <- paste(outpath, "/", myproject$id[1], ".rds", sep="")
+mysurvey <- readRDS(file = rdspath)
+csvpath <- paste(outpath, "/", myproject$id[1], ".csv", sep="")
+ret <- write.csv(x=mysurvey, file=csvpath)
+
+
+# Fix problem of spaces in column names!
+names(mysurvey) <- str_replace_all(names(mysurvey),c(" "=".", ","=""))
+colnames(mysurvey)
+
+### FILTERING
+# Eliminate test responses
+mysample <- filter(mysurvey, Status=="IP Address")
+nrow(mysample)
+
+# Eliminate outliers for response time
+quant_duration <- quantile(mysample$`Duration.(in.seconds)`, probs=seq(0,1,.05), na.rm=FALSE, names=FALSE)
+quant_duration
+mysample <- filter(mysample, `Duration.(in.seconds)` > quant_duration[2])
+mysample <- filter(mysample, `Duration.(in.seconds)` < quant_duration[20])
+nrow(mysample)
+
+# Proportion of respondents who are female
+females <- filter(mysample, Q1.Gender == "Female")
+pct_female <- nrow(females) / nrow(mysample)
+pct_female
+
+# Create a table
+partyXgender <- table(mysample$Q19.Pol.party, mysample$Q1.Gender, 
+                      exclude = c(NA,"I do not identify with either of these.", 
+                                  "I do not identify with any of these"))
+partyXgender
+
+```
+
+## Embedding the results of a R code within text 
+
+R markdown also allows you to embed the results of some R code within your text. For instance:
+
+The proportion of females respondents was `r round(pct_female,3)*100` percent in our sample.
+
+
+# Creating a PDF or HTML document. 
+Finally, when you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document
+
